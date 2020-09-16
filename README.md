@@ -57,6 +57,6 @@ Suppose you want to scrape all reviews from McDonald's that were posted in 2010:
 1. Navigate to McDonald's Glassdoor page and sort reviews ascending by date.
 2. Find the first page with a review from 2010, which happens to be [page 13](https://www.glassdoor.com/Reviews/McDonald-s-Reviews-E432_P13.htm?sort.sortType=RD&sort.ascending=true).
 3. Send the command to the script:
-`python main.py --headless --start_from_url --limit 9999 --max_date 2010-12-31 --url "https://www.glassdoor.com/Reviews/McDonald-s-Reviews-E432_P13.htm?sort.sortType=RD&sort.ascending=true" - f McDonald_revies.csv`
+`python main.py --headless --start_from_url --limit 9999 --max_date 2010-12-31 --url "https://www.glassdoor.com/Reviews/McDonald-s-Reviews-E432_P13.htm?sort.sortType=RD&sort.ascending=true" - f McDonald_reviews.csv`
 
 If there's demand for it, we can automate this process to provide a simple interface for filtering by date.
