@@ -1,12 +1,10 @@
-'''
+"""
 main.py
 ----------
 Matthew Chatham
 June 6, 2018
-
 Given a company's landing page on Glassdoor and an output filename, scrape the
 following information about each employee review:
-
 Review date
 Employee position
 Employee location
@@ -19,21 +17,24 @@ Cons text
 Advice to mgmttext
 Ratings for each of 5 categories
 Overall rating
-'''
+"""
 
-import time
-import pandas as pd
-from argparse import ArgumentParser
-import argparse
-import logging
-import logging.config
-from selenium import webdriver as wd
-import selenium
-import numpy as np
-from schema import SCHEMA
-import json
-import urllib
 import datetime as dt
+import json
+import logging.config
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from argparse import ArgumentParser
+
+import numpy as np
+import pandas as pd
+import selenium
+from selenium import webdriver as wd
+from selenium.common.exceptions import NoSuchElementException
+
+from schema import SCHEMA
 
 start = time.time()
 
@@ -96,7 +97,6 @@ else:
         --password flags.'
         raise Exception(msg)
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
@@ -112,10 +112,9 @@ logging.getLogger('selenium').setLevel(logging.CRITICAL)
 
 
 def scrape(field, review, author):
-
     def scrape_date(review):
         return review.find_element_by_tag_name(
-            'time').get_attribute('datetime')
+            'time').get_attribute('datetime')[4:15]
 
     def scrape_emp_title(review):
         if 'Anonymous Employee' not in review.text:
@@ -152,50 +151,41 @@ def scrape(field, review, author):
         return review.find_element_by_class_name('summary').text.strip('"')
 
     def scrape_years(review):
-        res = review.find_element_by_class_name('common__EiReviewTextStyles__allowLineBreaks').find_element_by_xpath('preceding-sibling::p').text
+        try:
+            res = review.find_element_by_class_name('mainText').text.strip('"')
+        except Exception:
+            res = np.nan
         return res
 
     def scrape_helpful(review):
         try:
-            helpful = review.find_element_by_class_name('helpfulCount')
-            res = helpful[helpful.find('(') + 1: -1]
+            x = review.find_element_by_class_name(
+                'helpfulReviews').text.strip('""')
+            res = x[x.find("(") + 1:x.find(")")]
         except Exception:
             res = 0
         return res
 
-    def expand_show_more(section):
-        try:
-            # more_content = section.find_element_by_class_name('moreContent')
-            more_link = section.find_element_by_class_name('v2__EIReviewDetailsV2__continueReading')
-            more_link.click()
-        except Exception:
-            pass
-
     def scrape_pros(review):
         try:
-            pros = review.find_element_by_class_name('common__EiReviewTextStyles__allowLineBreaks')
-            expand_show_more(pros)
-            res = pros.text.replace('Pros', '')
-            res = res.strip()
+            res = review.find_elements_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')[0].find_elements_by_tag_name('p')[1].text
         except Exception:
             res = np.nan
         return res
 
     def scrape_cons(review):
         try:
-            cons = review.find_elements_by_class_name('common__EiReviewTextStyles__allowLineBreaks')[1]
-            expand_show_more(cons)
-            res = cons.text.replace('Cons', '')
-            res = res.strip()
+            res = review.find_elements_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')[1].find_elements_by_tag_name('p')[1].text
         except Exception:
             res = np.nan
         return res
 
     def scrape_advice(review):
         try:
-            advice = review.find_elements_by_class_name('common__EiReviewTextStyles__allowLineBreaks')[2]
-            res = advice.text.replace('Advice to Management', '')
-            res = res.strip()
+            res = review.find_elements_by_class_name(
+                'v2__EIReviewDetailsV2__fullWidth')[2].find_elements_by_tag_name('p')[1].text
         except Exception:
             res = np.nan
         return res
@@ -203,8 +193,8 @@ def scrape(field, review, author):
     def scrape_overall_rating(review):
         try:
             ratings = review.find_element_by_class_name('gdStars')
-            overall = ratings.find_element_by_class_name(
-                'rating').find_element_by_class_name('value-title')
+            ratings = ratings.find_element_by_class_name('common__StarStyles__gdStars')
+            overall = ratings.find_element_by_class_name('rating')
             res = overall.get_attribute('title')
         except Exception:
             res = np.nan
@@ -237,41 +227,6 @@ def scrape(field, review, author):
     def scrape_senior_management(review):
         return _scrape_subrating(4)
 
-
-    def scrape_recommends(review):
-        try:
-            res = review.find_element_by_class_name('recommends').text
-            res = res.split('\n')
-            return res[0]
-        except:
-            return np.nan
-    
-    def scrape_outlook(review):
-        try:
-            res = review.find_element_by_class_name('recommends').text
-            res = res.split('\n')
-            if len(res) == 2 or len(res) == 3:
-                if 'CEO' in res[1]:
-                    return np.nan
-                return res[1]
-            return np.nan
-        except:
-            return np.nan
-    
-    def scrape_approve_ceo(review):
-        try:
-            res = review.find_element_by_class_name('recommends').text
-            res = res.split('\n')
-            if len(res) == 3:
-                return res[2]
-            if len(res) == 2:
-                if 'CEO' in res[1]:
-                    return res[1]
-            return np.nan
-        except:
-            return np.nan
-
-
     funcs = [
         scrape_date,
         scrape_emp_title,
@@ -288,11 +243,7 @@ def scrape(field, review, author):
         scrape_culture_and_values,
         scrape_career_opportunities,
         scrape_comp_and_benefits,
-        scrape_senior_management,
-        scrape_recommends,
-        scrape_outlook,
-        scrape_approve_ceo
-
+        scrape_senior_management
     ]
 
     fdict = dict((s, f) for (s, f) in zip(SCHEMA, funcs))
@@ -301,7 +252,6 @@ def scrape(field, review, author):
 
 
 def extract_from_page():
-
     def is_featured(review):
         try:
             review.find_element_by_class_name('featuredFlag')
@@ -310,20 +260,29 @@ def extract_from_page():
             return False
 
     def extract_review(review):
-        author = review.find_element_by_class_name('authorInfo')
-        res = {}
-        # import pdb;pdb.set_trace()
-        for field in SCHEMA:
-            res[field] = scrape(field, review, author)
+        try:
+            author = review.find_element_by_class_name('authorInfo')
+            res = {}
+            # import pdb;pdb.set_trace()
+            for field in SCHEMA:
+                res[field] = scrape(field, review, author)
 
-        assert set(res.keys()) == set(SCHEMA)
-        return res
+            assert set(res.keys()) == set(SCHEMA)
+            return res
+        except selenium.common.exceptions.NoSuchElementException:
+            res = np.nan
+            return res
 
     logger.info(f'Extracting reviews from page {page[0]}')
 
     res = pd.DataFrame([], columns=SCHEMA)
 
     reviews = browser.find_elements_by_class_name('empReview')
+
+    if len(reviews) == 0:
+        logger.info('No more Review!')
+        date_limit_reached[0] = True
+
     logger.info(f'Found {len(reviews)} reviews on page {page[0]}')
 
     for review in reviews:
@@ -337,9 +296,9 @@ def extract_from_page():
         idx[0] = idx[0] + 1
 
     if args.max_date and \
-        (pd.to_datetime(res['date']).max() > args.max_date) or \
+            (pd.to_datetime(res['date'], errors='coerce', format='%b %d %Y').max() > args.max_date) or \
             args.min_date and \
-            (pd.to_datetime(res['date']).min() < args.min_date):
+            (pd.to_datetime(res['date'], errors='coerce', format='%b %d %Y').min() < args.min_date):
         logger.info('Date limit reached, ending process')
         date_limit_reached[0] = True
 
@@ -347,9 +306,8 @@ def extract_from_page():
 
 
 def more_pages():
+    next_ = browser.find_element_by_class_name('pagination__PaginationStyle__next')
     try:
-        # paging_control = browser.find_element_by_class_name('pagingControls')
-        next_ = browser.find_element_by_class_name('pagination__PaginationStyle__next')
         next_.find_element_by_tag_name('a')
         return True
     except selenium.common.exceptions.NoSuchElementException:
@@ -358,7 +316,6 @@ def more_pages():
 
 def go_to_next_page():
     logger.info(f'Going to page {page[0] + 1}')
-    # paging_control = browser.find_element_by_class_name('pagingControls')
     next_ = browser.find_element_by_class_name(
         'pagination__PaginationStyle__next').find_element_by_tag_name('a')
     browser.get(next_.get_attribute('href'))
@@ -371,6 +328,7 @@ def no_reviews():
     # TODO: Find a company with no reviews to test on
 
 
+"""
 def navigate_to_reviews():
     logger.info('Navigating to company reviews')
 
@@ -381,14 +339,13 @@ def navigate_to_reviews():
         logger.info('No reviews to scrape. Bailing!')
         return False
 
-    reviews_cell = browser.find_element_by_xpath(
-        '//a[@data-label="Reviews"]')
+    reviews_cell = browser.find_element_by_class_name("eiCell.cell.reviews.active")
     reviews_path = reviews_cell.get_attribute('href')
-    
-    # reviews_path = driver.current_url.replace('Overview','Reviews')
     browser.get(reviews_path)
     time.sleep(1)
+
     return True
+"""
 
 
 def sign_in():
@@ -407,9 +364,7 @@ def sign_in():
     password_field.send_keys(args.password)
     submit_btn.click()
 
-    time.sleep(3)
-    browser.get(args.url)
-
+    time.sleep(1)
 
 
 def get_browser():
@@ -424,13 +379,7 @@ def get_browser():
 
 def get_current_page():
     logger.info('Getting current page number')
-    paging_control = browser.find_element_by_class_name('pagingControls')
-    current = int(paging_control.find_element_by_xpath(
-        '//ul//li[contains\
-        (concat(\' \',normalize-space(@class),\' \'),\' current \')]\
-        //span[contains(concat(\' \',\
-        normalize-space(@class),\' \'),\' disabled \')]')
-        .text.replace(',', ''))
+    current = int(browser.find_element_by_class_name('pagination__PaginationStyle__current').text)
     return current
 
 
@@ -454,40 +403,37 @@ date_limit_reached = [False]
 
 
 def main():
-
     logger.info(f'Scraping up to {args.limit} reviews.')
 
     res = pd.DataFrame([], columns=SCHEMA)
 
     sign_in()
-
-    if not args.start_from_url:
-        reviews_exist = navigate_to_reviews()
-        if not reviews_exist:
-            return
-    elif args.max_date or args.min_date:
+    if args.max_date or args.min_date:
         verify_date_sorting()
         browser.get(args.url)
         page[0] = get_current_page()
         logger.info(f'Starting from page {page[0]:,}.')
-        time.sleep(1)
+        time.sleep(5)
     else:
         browser.get(args.url)
         page[0] = get_current_page()
         logger.info(f'Starting from page {page[0]:,}.')
-        time.sleep(1)
+        time.sleep(5)
+
+    # import pdb;pdb.set_trace()
 
     reviews_df = extract_from_page()
     res = res.append(reviews_df)
 
-    # import pdb;pdb.set_trace()
-
-    while more_pages() and\
-            len(res) < args.limit and\
+    while more_pages() and \
+            len(res) < args.limit and \
             not date_limit_reached[0]:
-        go_to_next_page()
-        reviews_df = extract_from_page()
-        res = res.append(reviews_df)
+        try:
+            go_to_next_page()
+            reviews_df = extract_from_page()
+            res = res.append(reviews_df)
+        except Exception:
+            pass
 
     logger.info(f'Writing {len(res)} reviews to file {args.file}')
     res.to_csv(args.file, index=False, encoding='utf-8')
@@ -495,6 +441,13 @@ def main():
     end = time.time()
     logger.info(f'Finished in {end - start} seconds')
 
+
+"""
+    if not args.start_from_url:
+        reviews_exist = navigate_to_reviews()
+        if not reviews_exist:
+            return
+"""
 
 if __name__ == '__main__':
     main()
